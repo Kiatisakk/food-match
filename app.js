@@ -8,10 +8,14 @@ const EFFORT = 450; // swap tries per pixel: ~2.5 s at 256x256 on a normal lapto
 //   full:  the original photo + the sharp result of the chosen dish (one request per choice)
 // Each role is {src: "local", size} = our own files under data/thumb|full/, or {src: "hf"} = the original
 // Food-101 photo from the Hugging Face dataset viewer. Default (npm start on a full build): both local.
+// full may also carry fallback: {src: "local", size}: used when Hugging Face fails (rate limit, outage),
+// after which Hugging Face is skipped for HF_COOLDOWN so a visitor isn't kept waiting on it.
 const pad = (i, n) => String(i).padStart(n, "0");
 const localUrl = (i, dir) => `${DATA}${dir}/${pad(Math.floor(i / 1000), 2)}/${pad(i, 5)}.jpg`;
 const HF_ROWS = "https://datasets-server.huggingface.co/rows";
 const HF_TTL = 30 * 60 * 1000; // the signed image links expire after ~1 h
+const HF_COOLDOWN = 5 * 60 * 1000; // Hugging Face rate limits use 5-minute windows
+let hfDownUntil = 0;
 let srcRows = null;             // data/src.bin: (split << 31) | row, only loaded when a role uses "hf"
 let IMG = null;                 // { thumb: {src, size}, full: {src, size} }, resolved from meta when data is ready
 const hfCache = new Map();      // i -> { t, p: Promise<url> }
@@ -41,11 +45,33 @@ function imageConfig(m) {
   if (m.images === "hf") return { thumb: { src: "hf", size: 512 }, full: { src: "hf", size: 512 } }; // older sites
   if (m.images && typeof m.images === "object") for (const r of ["thumb", "full"]) Object.assign(base[r], m.images[r]);
   for (const r of ["thumb", "full"]) if (base[r].src === "hf") base[r].size = 512; // Food-101 originals: <= 512px
+  if (base.full.fallback && base.full.src !== "hf") delete base.full.fallback;
   return base;
+}
+// The chosen dish's full photo as a loaded <img>, plus the size it really has. Tries the primary source, then
+// the fallback. Cached per image so the "original" thumbnail and the sharp result share one download.
+const fullCache = new Map(); // i -> Promise<{ im, size, fallback }>
+function loadFull(i) {
+  if (fullCache.has(i)) return fullCache.get(i);
+  const F = IMG.full, fb = F.fallback;
+  const local = async () => ({ im: await loadImg(localUrl(i, "full")), size: fb ? fb.size : F.size, fallback: !!fb });
+  const p = (async () => {
+    if (F.src !== "hf") return local();
+    if (fb && Date.now() < hfDownUntil) return local();
+    try { return { im: await loadImg(await hfUrl(i)), size: F.size, fallback: false }; }
+    catch (e) {
+      if (!fb) throw e;
+      hfDownUntil = Date.now() + HF_COOLDOWN;
+      return local();
+    }
+  })();
+  p.catch(() => fullCache.delete(i));
+  fullCache.set(i, p);
+  if (fullCache.size > 64) fullCache.delete(fullCache.keys().next().value);
+  return p;
 }
 const urlFor = (role, i) => IMG[role].src === "hf" ? hfUrl(i) : Promise.resolve(localUrl(i, role));
 const thumbUrl = i => urlFor("thumb", i);
-const fullUrl = i => urlFor("full", i);
 
 let meta = null, ready = null;
 let img = null;                 // user's picture (canvas, <= 1024px)
@@ -262,7 +288,7 @@ function select(k) {
   renderGrid();
   $("nameTh").textContent = c.th; $("nameEn").textContent = c.en;
   $("orig").removeAttribute("src");
-  fullUrl(it.i).then(u => { if (items[sel] === it) $("orig").src = u; }, () => {});
+  loadFull(it.i).then(f => { if (items[sel] === it) $("orig").src = f.im.src; }, () => {});
   $("pct").textContent = it.score.toFixed(1) + "%"; // same number as in the grid
   $("pctHi").innerHTML = "&nbsp;";
   drawChart(it);
@@ -292,18 +318,25 @@ function squarePixels(im, N) {
   g.drawImage(im, (im.naturalWidth - s) / 2, (im.naturalHeight - s) / 2, s, s, 0, 0, N, N);
   return g.getImageData(0, 0, N, N).data;
 }
-const targetData = async (it, N) => squarePixels(await loadImg(await (N <= IMG.thumb.size ? thumbUrl : fullUrl)(it.i)), N);
 
 async function runHi(it) {
-  const my = ++hiTok, N = +$("size").value, n = N * N;
+  const my = ++hiTok;
+  let N = +$("size").value;
   t0Sel = performance.now();
   cancelAnimationFrame(animHi); if (assignWorker) assignWorker.terminate();
   last = null; $("outHi").classList.remove("on"); setBtns();
-  const srcD = cropCanvas(N).getContext("2d").getImageData(0, 0, N, N).data;
-  let tgt;
-  try { tgt = await targetData(it, N); }
-  catch (e) { if (my === hiTok) $("pctHi").textContent = `ที่ ${N}px: โหลดรูปไม่ได้`; return; }
+  let tgt, note = "";
+  try {
+    if (N <= IMG.thumb.size) tgt = squarePixels(await loadImg(await thumbUrl(it.i)), N);
+    else {
+      const f = await loadFull(it.i);
+      if (f.fallback && N > f.size) { N = f.size; note = " (รูปสำรอง)"; } // the backup copy is smaller
+      else if (f.fallback) note = " (รูปสำรอง)";
+      tgt = squarePixels(f.im, N);
+    }
+  } catch (e) { if (my === hiTok) $("pctHi").textContent = `ที่ ${N}px: โหลดรูปไม่ได้`; return; }
   if (my !== hiTok) return;
+  const n = N * N, srcD = cropCanvas(N).getContext("2d").getImageData(0, 0, N, N).data;
   const w = assignWorker = new Worker("assign-worker.js");
   const s = srcD.slice(), t = new Uint8ClampedArray(tgt);
   w.onmessage = async e => {
@@ -311,7 +344,7 @@ async function runHi(it) {
     if (e.data.type === "progress") { $("pctHi").textContent = `ที่ ${N}px: กำลังจัด ${Math.round(e.data.p * 100)}%`; return; }
     w.terminate(); assignWorker = null;
     window.__hiMs = performance.now() - t0Sel;
-    $("pctHi").textContent = `ที่ ${N}px: ${e.data.score.toFixed(1)}%`;
+    $("pctHi").textContent = `ที่ ${N}px${note}: ${e.data.score.toFixed(1)}%`;
     last = { N, src: srcD, a: e.data.a, final: finalPixels(srcD, e.data.a) };
     await lowP; // let the quick animation finish, then cross-fade to the sharp picture
     if (my !== hiTok) return;
