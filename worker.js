@@ -6,17 +6,22 @@ const post = m => postMessage(m);
 async function getBuf(url, label, weight) {
   const r = await fetch(url);
   if (!r.ok) { const e = new Error(url + " " + r.status); e.status = r.status; throw e; }
+  // content-length is the *compressed* size when the host gzips (GitHub Pages does), so it is only a
+  // progress hint: collect chunks and join them at the end.
   const total = +r.headers.get("content-length") || 0;
   if (!r.body || !total) return new Uint8Array(await r.arrayBuffer());
-  const out = new Uint8Array(total), rd = r.body.getReader();
+  const zipped = !!r.headers.get("content-encoding"), rd = r.body.getReader(), parts = [];
   let got = 0;
   for (;;) {
     const { done, value } = await rd.read();
     if (done) break;
-    out.set(value, got); got += value.length;
-    post({ type: "load", label, p: got / total, weight });
+    parts.push(value); got += value.length;
+    if (!zipped) post({ type: "load", label, p: Math.min(1, got / total), weight });
   }
-  return got === total ? out : out.slice(0, got);
+  post({ type: "load", label, p: 1, weight });
+  const out = new Uint8Array(got);
+  let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
 }
 
 async function init(base) {
