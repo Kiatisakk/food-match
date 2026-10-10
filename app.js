@@ -2,10 +2,38 @@ const $ = id => document.getElementById(id);
 const DATA = (new URLSearchParams(location.search).get("data") || "data").replace(/\/?$/, "/");
 const EFFORT = 450; // swap tries per pixel: ~2.5 s at 256x256 on a normal laptop
 
-// All image URLs live here, so a deploy can point them at another host.
+// All image URLs live here. meta.images === "hf" (the deployed site) fetches the original photo from the
+// Hugging Face dataset viewer instead of our own thumb/ and full/ files, so no images are hosted with the site.
 const pad = (i, n) => String(i).padStart(n, "0");
-const thumbUrl = i => `${DATA}thumb/${pad(Math.floor(i / 1000), 2)}/${pad(i, 5)}.jpg`;
-const fullUrl = i => `${DATA}full/${pad(Math.floor(i / 1000), 2)}/${pad(i, 5)}.jpg`;
+const localUrl = (i, dir) => `${DATA}${dir}/${pad(Math.floor(i / 1000), 2)}/${pad(i, 5)}.jpg`;
+const HF_ROWS = "https://datasets-server.huggingface.co/rows";
+const HF_TTL = 30 * 60 * 1000; // the signed image links expire after ~1 h
+let srcRows = null;             // data/src.bin: (split << 31) | row, only loaded in "hf" mode
+const hfCache = new Map();      // i -> { t, p: Promise<url> }
+// One gentle retry for a dropped request. Not more: the dataset viewer counts as Hugging Face's "API" bucket
+// (~500 requests / 5 min per IP, 13 per search), and a 429 arrives without CORS headers, so it looks like a
+// network error and retrying hard would only burn the quota.
+async function withRetry(fn, waits = [1500]) {
+  for (let k = 0; ; k++) {
+    try { return await fn(); }
+    catch (e) { if (k >= waits.length) throw e; await new Promise(r => setTimeout(r, waits[k])); }
+  }
+}
+function hfUrl(i) {
+  const hit = hfCache.get(i);
+  if (hit && performance.now() - hit.t < HF_TTL) return hit.p;
+  const v = srcRows[i], split = v >>> 31 ? "validation" : "train", row = v & 0x7fffffff;
+  const url = `${HF_ROWS}?dataset=${encodeURIComponent(meta.hf.repo)}&config=default&split=${split}&offset=${row}&length=1`;
+  const p = withRetry(() => fetch(url)
+    .then(r => { if (!r.ok) throw new Error("Hugging Face " + r.status); return r.json(); })
+    .then(j => j.rows[0].row.image.src));
+  p.catch(() => hfCache.delete(i));
+  hfCache.set(i, { t: performance.now(), p });
+  return p;
+}
+// size "thumb" (grid, 96px work) or "full" (256px work); always resolves to a URL
+const thumbUrl = i => meta.images === "hf" ? hfUrl(i) : Promise.resolve(localUrl(i, "thumb"));
+const fullUrl = i => meta.images === "hf" ? hfUrl(i) : Promise.resolve(localUrl(i, "full"));
 
 let meta = null, ready = null;
 let img = null;                 // user's picture (canvas, <= 1024px)
@@ -31,7 +59,11 @@ searchWorker.onmessage = e => {
     else showNotice(`โหลดข้อมูลไม่ได้ (${m.msg}) ลองเปิดผ่าน <code>npm start</code> ไม่ใช่เปิดไฟล์ตรง ๆ`);
     ready.fail();
   } else if (m.type === "ready") {
-    meta = m.meta; ready.ok();
+    meta = m.meta;
+    if (meta.images === "hf") {
+      fetch(DATA + "src.bin").then(r => r.arrayBuffer()).then(b => { srcRows = new Uint32Array(b); ready.ok(); })
+        .catch(() => { showNotice("โหลด src.bin ไม่ได้"); ready.fail(); });
+    } else ready.ok();
   } else if (m.type === "result") onResult(m);
 };
 ready = (() => { const o = {}; o.p = new Promise((ok, fail) => { o.ok = ok; o.fail = fail; }); return o; })();
@@ -161,17 +193,12 @@ function showUserPixels() {
   const out = $("out"); out.width = out.height = SCORE_N;
   out.getContext("2d").putImageData(new ImageData(src64.slice(), SCORE_N, SCORE_N), 0, 0);
 }
-async function thumb64(i) {
-  const im = await loadImg(thumbUrl(i));
-  const c = document.createElement("canvas"); c.width = c.height = SCORE_N;
-  const g = c.getContext("2d", { willReadFrequently: true });
-  g.imageSmoothingQuality = "high"; g.drawImage(im, 0, 0, SCORE_N, SCORE_N);
-  return g.getImageData(0, 0, SCORE_N, SCORE_N).data;
-}
+const thumb64 = async i => squarePixels(await loadImg(await thumbUrl(i)), SCORE_N);
 async function scoreAll(id) {
   tScore = performance.now();
   let tg;
-  try { tg = await Promise.all(items.map(it => thumb64(it.i))); } catch { $("status").textContent = "โหลดรูปอาหารไม่ได้"; return; }
+  try { tg = await Promise.all(items.map(it => thumb64(it.i))); }
+  catch (e) { if (id === qid) $("status").textContent = loadError(e); return; }
   if (id !== qid) return;
   window.__thumbMs = performance.now() - tScore;
   const P = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)), mine = items;
@@ -205,9 +232,10 @@ function renderGrid() {
     const c = meta.classes[it.cls];
     const b = document.createElement("button");
     b.type = "button"; b.dataset.k = k;
-    b.innerHTML = `<img alt="" loading="lazy" src="${thumbUrl(it.i)}"><span>${c.th}</span><b>${it.score == null ? "…%" : it.score.toFixed(1) + "%"}</b>`;
+    b.innerHTML = `<img alt=""><span>${c.th}</span><b>${it.score == null ? "…%" : it.score.toFixed(1) + "%"}</b>`;
     b.addEventListener("click", () => { if (items.every(x => x.score != null)) select(k); });
     g.append(b);
+    thumbUrl(it.i).then(u => { b.querySelector("img").src = u; }, () => {});
   });
 }
 
@@ -218,7 +246,8 @@ function select(k) {
   stopWork();
   renderGrid();
   $("nameTh").textContent = c.th; $("nameEn").textContent = c.en;
-  $("orig").src = fullUrl(it.i);
+  $("orig").removeAttribute("src");
+  fullUrl(it.i).then(u => { if (items[sel] === it) $("orig").src = u; }, () => {});
   $("pct").textContent = it.score.toFixed(1) + "%"; // same number as in the grid
   $("pctHi").innerHTML = "&nbsp;";
   drawChart(it);
@@ -230,16 +259,25 @@ function select(k) {
   // 2) meanwhile: the sharp version
   runHi(it);
 }
-const loadImg = url => new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error(url)); i.src = url; });
-
-async function targetData(it, N) {
-  const im = await loadImg(N === 96 ? thumbUrl(it.i) : fullUrl(it.i));
+const loadImg = url => new Promise((ok, fail) => {
+  const i = new Image(); i.crossOrigin = "anonymous"; // Hugging Face images must be CORS-clean to read pixels
+  i.onload = () => ok(i); i.onerror = () => fail(new Error("load " + url.split("?")[0])); i.src = url;
+});
+function loadError(e) {
+  return meta.images === "hf"
+    ? "โหลดรูปจาก Hugging Face ไม่ได้ อาจเพราะค้นถี่เกินไป (ได้ราว 35 ครั้งต่อ 5 นาที) รอสักครู่แล้วลองใหม่นะ"
+    : "โหลดรูปอาหารไม่ได้ (" + e.message + ")";
+}
+// centre square of an image, resized to N x N RGBA (local files are already square, HF originals are not)
+function squarePixels(im, N) {
   const c = document.createElement("canvas"); c.width = c.height = N;
   const g = c.getContext("2d", { willReadFrequently: true });
   g.imageSmoothingQuality = "high";
-  g.drawImage(im, 0, 0, N, N);
+  const s = Math.min(im.naturalWidth, im.naturalHeight);
+  g.drawImage(im, (im.naturalWidth - s) / 2, (im.naturalHeight - s) / 2, s, s, 0, 0, N, N);
   return g.getImageData(0, 0, N, N).data;
 }
+const targetData = async (it, N) => squarePixels(await loadImg(await (N === 96 ? thumbUrl : fullUrl)(it.i)), N);
 
 async function runHi(it) {
   const my = ++hiTok, N = +$("size").value, n = N * N;
@@ -248,7 +286,8 @@ async function runHi(it) {
   last = null; $("outHi").classList.remove("on"); setBtns();
   const srcD = cropCanvas(N).getContext("2d").getImageData(0, 0, N, N).data;
   let tgt;
-  try { tgt = await targetData(it, N); } catch { return; }
+  try { tgt = await targetData(it, N); }
+  catch (e) { if (my === hiTok) $("pctHi").textContent = `ที่ ${N}px: โหลดรูปไม่ได้`; return; }
   if (my !== hiTok) return;
   const w = assignWorker = new Worker("assign-worker.js");
   const s = srcD.slice(), t = new Uint8ClampedArray(tgt);

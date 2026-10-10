@@ -5,6 +5,8 @@
   "description": "หาว่ารูปอาหารไหนประกอบขึ้นได้จากพิกเซลของรูปคุณ",
   "scripts": {
     "start": "npx --yes serve -l 5175 .",
-    "test": "node test.js"
+    "test": "node test.js",
+    "site": "python tools/make_site.py",
+    "deploy": "python tools/make_site.py && npx --yes gh-pages@6.3.0 -d site --dotfiles -m \"Deploy site\""
   }
 }

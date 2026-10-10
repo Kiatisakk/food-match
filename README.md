@@ -22,6 +22,7 @@ A useless but surprisingly fun toy. A cartoon face turns into a cupcake, a sunse
 - [Performance](#performance)
 - [Project structure](#project-structure)
 - [Data pipeline](#data-pipeline)
+- [Deploying](#deploying)
 - [Development](#development)
 - [Limitations](#limitations)
 - [Credits and license](#credits-and-license)
@@ -142,10 +143,11 @@ food-match/
 ├── verify_data.py                  # integrity and coverage checks for data/
 ├── DATA_FORMAT.md                  # the data contract between Python and JS
 ├── tools/make_fake_data.py         # synthetic dataset for development
+├── tools/make_site.py              # build site/ for static hosting (images from Hugging Face)
 └── test.js                         # Node test suite (npm test)
 ```
 
-Generated and git-ignored: `raw/` (downloads), `cache/` (per-image decode cache), `data/` (the built dataset) and `fake_data/`.
+Generated and git-ignored: `raw/` (downloads), `cache/` (per-image decode cache), `data/` (the built dataset), `fake_data/` and `site/`.
 
 ## Data pipeline
 
@@ -178,6 +180,30 @@ python verify_data.py
 
 It checks file sizes and label ranges. It also confirms that signatures survive JPEG round-trips, traces random photos back to their source parquet rows, and compares the selection's colour coverage against a random baseline.
 
+## Deploying
+
+The public site hosts **no food images**. It ships only the code and the search files (~10 MB: signatures, colour counts, labels and `src.bin`). Each result photo is fetched at run time from the Hugging Face [dataset viewer API](https://huggingface.co/docs/dataset-viewer), using `src.bin` to find the photo's row in [`ethz/food101`](https://huggingface.co/datasets/ethz/food101). The photo is then centre-cropped in the browser.
+
+```bash
+npm run site      # build site/ from data/ (sets meta.images = "hf")
+npx serve site    # optional: try the deployed version locally
+npm run deploy    # build site/ and push it to the gh-pages branch
+```
+
+The first time, enable GitHub Pages for the `gh-pages` branch in the repository settings.
+
+**Trade-offs of the deployed version:**
+
+| | Local (`npm start`) | Deployed (Hugging Face images) |
+| --- | --- | --- |
+| Images | `data/thumb`, `data/full` | Food-101 originals via the dataset viewer |
+| First motion after search | ~0.5 s | ~2 s |
+| Searches per visitor | unlimited | ~35 per 5 min |
+
+The search limit comes from Hugging Face's [rate limits](https://huggingface.co/docs/hub/rate-limits). Anonymous visitors get about 500 API requests per 5 minutes per IP, and each search makes 13 requests. A rate-limited request comes back without CORS headers, so the app shows a friendly "wait a moment" message instead of retrying.
+
+If traffic ever outgrows this, upload the cropped images to a Hugging Face dataset. They can then be fetched through `/resolve/` URLs, which have a much higher quota (~3,000 requests per 5 minutes), by changing `thumbUrl()` and `fullUrl()` in `app.js`.
+
 ## Development
 
 ```bash
@@ -199,7 +225,7 @@ Useful knobs:
 | --- | --- | --- |
 | `app.js` | `EFFORT` | swap tries per pixel for the final image (quality vs. time) |
 | `app.js` | `SCORE_N`, `SCORE_EFFORT` | resolution and effort of the top-13 scoring |
-| `app.js` | `thumbUrl()`, `fullUrl()` | the only places image URLs are built; swap them to host images elsewhere |
+| `app.js` | `thumbUrl()`, `fullUrl()` | the only places image URLs are built (local files or Hugging Face) |
 | `build_data.py` | `N`, `MIN_PER_CLASS`, `BLUR_DROP` | dataset size and selection rules |
 
 ## Limitations
@@ -208,7 +234,7 @@ Useful knobs:
 - **Unusual palettes match worse.** Neon, pure blue or very saturated photos have no close food counterpart, and the result gets noisier.
 - **Food-101 is noisy by design.** A few photos are not food, or carry the wrong label.
 - **Farthest-point selection helps only a little.** Measured coverage is close to a random 50,000-photo subset; it helps slightly with unusual colours.
-- **Not deployable as-is.** The images can't be published (see below). `src.bin` lets a future version fetch the originals from Hugging Face instead of hosting them.
+- **The deployed site is rate-limited** to about 35 searches per 5 minutes per visitor (see [Deploying](#deploying)).
 
 ## Credits and license
 
