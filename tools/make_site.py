@@ -28,6 +28,8 @@ for f in DATA_FILES:
 meta["images"] = "hf"
 json.dump(meta, open(os.path.join(SITE, "data", "meta.json"), "w", encoding="utf-8"), ensure_ascii=False)
 open(os.path.join(SITE, ".nojekyll"), "w").close()  # serve files as-is on GitHub Pages
+# empty .gitignore: gh-pages commits from a clone of this repo, whose .gitignore would drop data/
+open(os.path.join(SITE, ".gitignore"), "w").close()
 
 size = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(SITE) for f in fs)
 print(f"site/ ready: {size / 1e6:.1f} MB, {meta['count']:,} photos indexed, images from huggingface.co/datasets/{meta['hf']['repo']}")
