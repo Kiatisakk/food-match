@@ -6,6 +6,12 @@ A useless but surprisingly fun toy. A cartoon face turns into a cupcake, a sunse
 
 [ภาษาไทย](README.th.md)
 
+<p align="center">
+  <img src="docs/screenshot-fake-data.png" alt="food-match screenshot: a cartoon face rebuilt into a dish, with the 12 next-best matches and a colour-count chart" width="720">
+  <br>
+  <sub>Screenshot made with the <b>synthetic dataset</b> (<code>tools/make_fake_data.py</code>), so the "dishes" are coloured blobs. With the real data you get actual Food-101 photos.</sub>
+</p>
+
 ---
 
 ## Contents
