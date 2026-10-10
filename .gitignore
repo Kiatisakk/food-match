@@ -1,8 +1,0 @@
-raw/
-cache/
-data/
-fake_data/
-__pycache__/
-*.log
-node_modules/
-site/
