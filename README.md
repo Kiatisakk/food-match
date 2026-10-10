@@ -4,7 +4,7 @@
 
 A useless but surprisingly fun toy. A cartoon face turns into a cupcake, a sunset into gyoza, and a green field into garlic bread. It runs entirely in your browser, and your photo never leaves your machine.
 
-[ภาษาไทย](README.th.md)
+**▶ Try it: <https://kiatisakk.github.io/food-match/>**  ·  [ภาษาไทย](README.th.md)
 
 <p align="center">
   <img src="docs/screenshot-fake-data.png" alt="food-match screenshot: a cartoon face rebuilt into a dish, with the 12 next-best matches and a colour-count chart" width="720">

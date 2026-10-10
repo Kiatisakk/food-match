@@ -1,6 +1,6 @@
 # food-match: อาหารจากพิกเซลคุณ
 
-[English](README.md)
+**▶ ลองเล่น: <https://kiatisakk.github.io/food-match/>**  ·  [English](README.md)
 
 <p align="center">
   <img src="docs/screenshot-fake-data.png" alt="ภาพตัวอย่าง food-match" width="720">
