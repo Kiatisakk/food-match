@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>อาหารจากพิกเซลคุณ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kanit:wght@600;700&family=Sarabun:wght@400;600&family=JetBrains+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>อาหารจาก<span>พิกเซลคุณ</span></h1>
+    <p class="tag">ใส่รูปอะไรก็ได้ เราจะหาว่าในรูปอาหารหลายหมื่นรูป รูปไหนที่ประกอบขึ้นใหม่ได้ด้วยพิกเซลของคุณเท่านั้น ไม่เปลี่ยนสี แค่ย้ายที่ แล้วดูพิกเซลบินไปเรียงเป็นอาหาร</p>
+  </header>
+
+  <p id="notice" class="notice" hidden></p>
+
+  <section id="loading" class="loading" aria-live="polite">
+    <div class="bar"><i id="barFill"></i></div>
+    <p id="loadText">กำลังโหลดฐานข้อมูลอาหาร…</p>
+  </section>
+
+  <section id="start" class="drop big" hidden>
+    <p class="dropTitle">ลากรูปมาวางตรงนี้</p>
+    <p class="hint2">หรือกด Ctrl+V วางรูป หรือเลือกไฟล์</p>
+    <label class="btn primary">เลือกรูป<input type="file" id="file" accept="image/*"></label>
+  </section>
+
+  <main id="work" hidden>
+    <section class="left">
+      <div class="card">
+        <h2>รูปของคุณ <small>ลากกรอบเพื่อเลือกส่วนที่จะใช้</small></h2>
+        <div class="cropper" id="cropper">
+          <canvas id="cropImg"></canvas>
+          <div class="cbox" id="cbox">
+            <i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i>
+          </div>
+        </div>
+      </div>
+      <div class="card ctls">
+        <div class="seg" role="radiogroup" aria-label="โหมดค้นหา">
+          <label><input type="radio" name="mode" value="best" checked><span>ตรงที่สุด</span></label>
+          <label><input type="radio" name="mode" value="diverse"><span>หลากเมนู</span></label>
+        </div>
+        <div class="ctl"><label for="group">หมวด</label><select id="group"></select></div>
+        <div class="ctl"><label for="q">ค้นหาเมนู (ไทย / อังกฤษ)</label><input type="search" id="q" placeholder="เช่น พิซซ่า, ramen"></div>
+        <div class="ctl"><label for="size">ขนาดภาพที่ประกอบ</label>
+          <select id="size"><option>96</option><option selected>128</option><option>192</option><option>256</option></select></div>
+        <div class="btns">
+          <button class="btn" id="replay" type="button" disabled>เล่นอีกรอบ</button>
+          <button class="btn" id="save" type="button" disabled>บันทึก PNG</button>
+          <label class="btn file">ลองรูปใหม่<input type="file" id="file2" accept="image/*"></label>
+        </div>
+      </div>
+    </section>
+
+    <section class="right">
+      <p id="counter" class="counter">&nbsp;</p>
+      <div class="card">
+        <div class="mainrow">
+          <div class="stage"><canvas id="out" aria-label="ภาพที่ประกอบจากพิกเซลของคุณ"></canvas><canvas id="outHi" aria-hidden="true"></canvas></div>
+          <div class="info">
+            <p class="pct"><b id="pct">–</b><small>เหมือนเป้าหมาย</small></p>
+            <p class="en" id="pctHi">&nbsp;</p>
+            <p class="th" id="nameTh">–</p>
+            <p class="en" id="nameEn">&nbsp;</p>
+            <p class="en" id="status">&nbsp;</p>
+            <figure class="orig"><img id="orig" alt="รูปอาหารต้นฉบับ"><figcaption>รูปจริง</figcaption></figure>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>อีก 12 จานที่เกือบได้ <small>กดเพื่อดูพิกเซลบินไปเรียง</small></h2>
+        <div id="grid" class="grid"></div>
+      </div>
+      <div class="card">
+        <h2>ทำไมถึงเข้ากัน <small>จำนวนสีของคุณ (บน) เทียบกับของอาหาร (ล่าง)</small></h2>
+        <canvas id="chart" class="chart" aria-label="กราฟเปรียบเทียบจำนวนสี"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>รูปอาหารจากชุดข้อมูล <a href="https://data.vision.ee.ethz.ch/cvl/datasets_extra/food-101/">Food-101</a> (ETH Zürich) ใช้เพื่อการวิจัยและความสนุกเท่านั้น ภาพของคุณประมวลผลในเบราว์เซอร์ ไม่ถูกส่งไปไหน</p>
+  </footer>
+</div>
+<script src="core.js"></script>
+<script src="sigcore.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
