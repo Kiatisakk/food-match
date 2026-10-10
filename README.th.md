@@ -43,7 +43,7 @@ python tools/make_fake_data.py --out=fake_data      # หรือโฟลเ�
 ```
 npm run deploy                                 # สร้างแบบ hybrid แล้ว push ขึ้น gh-pages
 python tools/make_site.py --preset pages       # ถ้าอยากเลิกพึ่ง Hugging Face
-npx gh-pages -d site --dotfiles                # แล้ว push ขึ้นไป
+python tools/deploy_site.py                    # แล้ว push site/ ขึ้น gh-pages
 ```
 
 แอปอ่านแหล่งรูปจาก `meta.images` เปลี่ยน preset จึงไม่ต้องแก้โค้ด

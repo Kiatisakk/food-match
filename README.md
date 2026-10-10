@@ -200,13 +200,14 @@ npm run site                                   # hybrid
 python tools/make_site.py --preset pages       # everything on GitHub Pages, no Hugging Face at all
 npx serve site                                 # optional: try it locally
 npm run deploy                                 # build (hybrid) and push to the gh-pages branch
+python tools/deploy_site.py                    # push an already-built site/ (any preset)
 ```
 
 The first time, enable GitHub Pages for the `gh-pages` branch in the repository settings.
 
 **Why the hybrid preset.** Hugging Face's dataset viewer API falls in the "API" bucket of the [Hub rate limits](https://huggingface.co/docs/hub/rate-limits): about 500 requests per 5 minutes per IP for anonymous visitors. The `hf` preset needs 13 per search, so it hits that limit quickly. A rate-limited reply also comes back without CORS headers, so the browser only sees a network error. Hosting the small thumbnails cuts this to one API call per chosen dish.
 
-**Switching to `pages`.** If Hugging Face ever gets in the way, run `python tools/make_site.py --preset pages`, then `npx gh-pages -d site --dotfiles`. The app reads its image sources from `meta.images`, so the code doesn't change. The result size menu only offers sizes up to the hosted `full` size.
+**Switching to `pages`.** If Hugging Face ever gets in the way, run `python tools/make_site.py --preset pages`, then `python tools/deploy_site.py`. The app reads its image sources from `meta.images`, so the code doesn't change. The result size menu only offers sizes up to the hosted `full` size.
 
 ## Development
 

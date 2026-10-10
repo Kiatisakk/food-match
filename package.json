@@ -7,6 +7,6 @@
     "start": "npx --yes serve -l 5175 .",
     "test": "node test.js",
     "site": "python tools/make_site.py",
-    "deploy": "python tools/make_site.py && npx --yes gh-pages@6.3.0 -d site --dotfiles -m \"Deploy site\""
+    "deploy": "python tools/make_site.py && python tools/deploy_site.py"
   }
 }
