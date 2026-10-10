@@ -5,14 +5,17 @@ The app needs photos for two roles (see "where photos come from" in app.js):
   full   the chosen dish: original photo + sharp result         -> 1 request per choice
 
 Presets decide where each role's photos come from:
-  hybrid (default)  thumb = our own small JPEGs on the site, full = Food-101 original from Hugging Face.
+  fallback (default) like hybrid, plus a hosted --full-size copy of every photo that the app switches to when
+                    Hugging Face fails (rate limit, outage). Best of both; ~590 MB.
+  hybrid            thumb = our own small JPEGs on the site, full = Food-101 original from Hugging Face.
                     One Hugging Face API call per choice instead of 13, so its rate limit is out of reach.
                     Adds ~100 MB of 64px thumbnails.
   pages             thumb and full both hosted on the site. No Hugging Face at all, but the result is capped at
                     --full-size (default 192) to keep the site under GitHub Pages' 1 GB limit.
   hf                no photos on the site at all; everything from Hugging Face (13 API calls per search).
 
-    python tools/make_site.py                         # hybrid
+    python tools/make_site.py                         # fallback (hybrid + hosted backup)
+    python tools/make_site.py --preset hybrid         # smallest site that avoids the HF rate limit
     python tools/make_site.py --preset pages          # everything on GitHub Pages
     python tools/make_site.py --preset pages --full-size 160 --quality 80
     npx --yes serve site                              # try it locally
@@ -53,9 +56,9 @@ def write_role(role, n, size, quality):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--preset", choices=["hybrid", "pages", "hf"], default="hybrid")
+    ap.add_argument("--preset", choices=["fallback", "hybrid", "pages", "hf"], default="fallback")
     ap.add_argument("--thumb-size", type=int, default=64, help="hosted thumbnail size (scoring runs at 64)")
-    ap.add_argument("--full-size", type=int, default=192, help="hosted full size for --preset pages (<= 256)")
+    ap.add_argument("--full-size", type=int, default=192, help="hosted full size for pages/fallback (<= 256)")
     ap.add_argument("--quality", type=int, default=82, help="JPEG quality of hosted photos")
     a = ap.parse_args()
 
@@ -75,12 +78,14 @@ def main():
     n = meta["count"]
     images = {"thumb": {"src": "hf"}, "full": {"src": "hf"}}
     print(f"preset {a.preset}:")
-    if a.preset in ("hybrid", "pages"):
+    if a.preset in ("fallback", "hybrid", "pages"):
         write_role("thumb", n, a.thumb_size, a.quality)
         images["thumb"] = {"src": "local", "size": a.thumb_size}
-    if a.preset == "pages":
+    if a.preset in ("pages", "fallback"):
         write_role("full", n, a.full_size, a.quality)
         images["full"] = {"src": "local", "size": a.full_size}
+    if a.preset == "fallback":
+        images["full"] = {"src": "hf", "fallback": {"src": "local", "size": a.full_size}}
     meta["images"] = images
     json.dump(meta, open(os.path.join(SITE, "data", "meta.json"), "w", encoding="utf-8"), ensure_ascii=False)
     open(os.path.join(SITE, ".nojekyll"), "w").close()  # serve files as-is on GitHub Pages

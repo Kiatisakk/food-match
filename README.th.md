@@ -36,17 +36,20 @@ python tools/make_fake_data.py --out=fake_data      # หรือโฟลเ�
 
 | preset | รูปเล็ก (ตาราง + ให้คะแนน 13 จาน) | รูปใหญ่ (จานที่เลือก) | ขนาดเว็บ | เรียก Hugging Face |
 | --- | --- | --- | --- | --- |
-| **`hybrid`** (ค่าเริ่มต้น) | บนเว็บ 64px | ดึงจาก Hugging Face | ~100 MB | 1 ครั้งต่อจานที่เลือก |
+| **`fallback`** (ค่าเริ่มต้น, ใช้บนเว็บจริง) | บนเว็บ 64px | ดึงจาก Hugging Face ถ้าใช้ไม่ได้จะใช้รูปสำรอง 192px บนเว็บแทน | ~590 MB | 1 ครั้งต่อจานที่เลือก (ตอนใช้รูปสำรองไม่เรียกเลย) |
+| `hybrid` | บนเว็บ 64px | ดึงจาก Hugging Face | ~100 MB | 1 ครั้งต่อจานที่เลือก |
 | **`pages`** | บนเว็บ 64px | บนเว็บ 192px | ~590 MB | ไม่เรียกเลย |
 | `hf` | Hugging Face | Hugging Face | ~10 MB | 13 ครั้งต่อการค้น (ติด rate limit ง่าย) |
 
 ```
-npm run deploy                                 # สร้างแบบ hybrid แล้ว push ขึ้น gh-pages
+npm run deploy                                 # สร้างแบบ fallback แล้ว push ขึ้น gh-pages
 python tools/make_site.py --preset pages       # ถ้าอยากเลิกพึ่ง Hugging Face
 python tools/deploy_site.py                    # แล้ว push site/ ขึ้น gh-pages
 ```
 
 แอปอ่านแหล่งรูปจาก `meta.images` เปลี่ยน preset จึงไม่ต้องแก้โค้ด
+
+ถ้าดึงรูปจาก Hugging Face ไม่ได้ (โดน rate limit หรือเว็บล่ม) แอปจะใช้รูปสำรอง 192px แทนและเขียนกำกับว่า "(รูปสำรอง)" แล้วจะไม่เรียก Hugging Face อีก 5 นาที
 
 ## ใช้งาน
 

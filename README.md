@@ -191,23 +191,26 @@ It checks file sizes and label ranges. It also confirms that signatures survive 
 
 | Preset | `thumb` | `full` | Site size | Hugging Face API calls | Max result size |
 | --- | --- | --- | --- | --- | --- |
-| **`hybrid`** (default) | site (64 px) | Hugging Face original | ~100 MB | 1 per choice | 256 |
+| **`fallback`** (default, live site) | site (64 px) | Hugging Face original, **or** the site's 192 px copy if Hugging Face fails | ~590 MB | 1 per choice (none while falling back) | 256 (192 on fallback) |
+| `hybrid` | site (64 px) | Hugging Face original | ~100 MB | 1 per choice | 256 |
 | **`pages`** | site (64 px) | site (`--full-size`, default 192 px) | ~590 MB | none | `--full-size` |
 | `hf` | Hugging Face | Hugging Face | ~10 MB | 13 per search | 256 |
 
 ```bash
-npm run site                                   # hybrid
+npm run site                                   # fallback (hybrid + hosted backup copies)
 python tools/make_site.py --preset pages       # everything on GitHub Pages, no Hugging Face at all
 npx serve site                                 # optional: try it locally
-npm run deploy                                 # build (hybrid) and push to the gh-pages branch
+npm run deploy                                 # build (fallback) and push to the gh-pages branch
 python tools/deploy_site.py                    # push an already-built site/ (any preset)
 ```
 
 The first time, enable GitHub Pages for the `gh-pages` branch in the repository settings.
 
-**Why the hybrid preset.** Hugging Face's dataset viewer API falls in the "API" bucket of the [Hub rate limits](https://huggingface.co/docs/hub/rate-limits): about 500 requests per 5 minutes per IP for anonymous visitors. The `hf` preset needs 13 per search, so it hits that limit quickly. A rate-limited reply also comes back without CORS headers, so the browser only sees a network error. Hosting the small thumbnails cuts this to one API call per chosen dish.
+**How the fallback works.** The chosen dish's photo is loaded from Hugging Face first. If that fails (rate limit, outage, blocked network), the app loads the hosted 192 px copy instead, caps the result at 192 px, and marks it "(รูปสำรอง)". It then skips Hugging Face for 5 minutes, which is the length of its rate-limit window, so later searches don't wait on a failing request.
 
-**Switching to `pages`.** If Hugging Face ever gets in the way, run `python tools/make_site.py --preset pages`, then `python tools/deploy_site.py`. The app reads its image sources from `meta.images`, so the code doesn't change. The result size menu only offers sizes up to the hosted `full` size.
+**Why not fetch everything from Hugging Face.** Hugging Face's dataset viewer API falls in the "API" bucket of the [Hub rate limits](https://huggingface.co/docs/hub/rate-limits): about 500 requests per 5 minutes per IP for anonymous visitors. The `hf` preset needs 13 per search, so it hits that limit quickly. A rate-limited reply also comes back without CORS headers, so the browser only sees a network error. Hosting the small thumbnails cuts this to one API call per chosen dish, and the hosted backup covers the rest.
+
+**Dropping Hugging Face entirely.** Run `python tools/make_site.py --preset pages`, then `python tools/deploy_site.py`. The app reads its image sources from `meta.images`, so the code doesn't change. The result size menu only offers sizes up to the hosted `full` size.
 
 ## Development
 
