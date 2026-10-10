@@ -143,7 +143,7 @@ food-match/
 ├── verify_data.py                  # integrity and coverage checks for data/
 ├── DATA_FORMAT.md                  # the data contract between Python and JS
 ├── tools/make_fake_data.py         # synthetic dataset for development
-├── tools/make_site.py              # build site/ for static hosting (images from Hugging Face)
+├── tools/make_site.py              # build site/ for GitHub Pages (presets: hybrid / pages / hf)
 └── test.js                         # Node test suite (npm test)
 ```
 
@@ -182,27 +182,31 @@ It checks file sizes and label ranges. It also confirms that signatures survive 
 
 ## Deploying
 
-The public site hosts **no food images**. It ships only the code and the search files (~10 MB: signatures, colour counts, labels and `src.bin`). Each result photo is fetched at run time from the Hugging Face [dataset viewer API](https://huggingface.co/docs/dataset-viewer), using `src.bin` to find the photo's row in [`ethz/food101`](https://huggingface.co/datasets/ethz/food101). The photo is then centre-cropped in the browser.
+`tools/make_site.py` builds `site/`, a static copy of the app for GitHub Pages. The app needs photos for two roles, and a **preset** decides where each one comes from:
+
+| Role | Used for | Requests |
+| --- | --- | --- |
+| `thumb` | results grid + real 64 px scoring of all 13 candidates | 13+ per search |
+| `full` | the chosen dish: original photo + sharp result | 1 per choice |
+
+| Preset | `thumb` | `full` | Site size | Hugging Face API calls | Max result size |
+| --- | --- | --- | --- | --- | --- |
+| **`hybrid`** (default) | site (64 px) | Hugging Face original | ~100 MB | 1 per choice | 256 |
+| **`pages`** | site (64 px) | site (`--full-size`, default 192 px) | ~590 MB | none | `--full-size` |
+| `hf` | Hugging Face | Hugging Face | ~10 MB | 13 per search | 256 |
 
 ```bash
-npm run site      # build site/ from data/ (sets meta.images = "hf")
-npx serve site    # optional: try the deployed version locally
-npm run deploy    # build site/ and push it to the gh-pages branch
+npm run site                                   # hybrid
+python tools/make_site.py --preset pages       # everything on GitHub Pages, no Hugging Face at all
+npx serve site                                 # optional: try it locally
+npm run deploy                                 # build (hybrid) and push to the gh-pages branch
 ```
 
 The first time, enable GitHub Pages for the `gh-pages` branch in the repository settings.
 
-**Trade-offs of the deployed version:**
+**Why the hybrid preset.** Hugging Face's dataset viewer API falls in the "API" bucket of the [Hub rate limits](https://huggingface.co/docs/hub/rate-limits): about 500 requests per 5 minutes per IP for anonymous visitors. The `hf` preset needs 13 per search, so it hits that limit quickly. A rate-limited reply also comes back without CORS headers, so the browser only sees a network error. Hosting the small thumbnails cuts this to one API call per chosen dish.
 
-| | Local (`npm start`) | Deployed (Hugging Face images) |
-| --- | --- | --- |
-| Images | `data/thumb`, `data/full` | Food-101 originals via the dataset viewer |
-| First motion after search | ~0.5 s | ~2 s |
-| Searches per visitor | unlimited | ~35 per 5 min |
-
-The search limit comes from Hugging Face's [rate limits](https://huggingface.co/docs/hub/rate-limits). Anonymous visitors get about 500 API requests per 5 minutes per IP, and each search makes 13 requests. A rate-limited request comes back without CORS headers, so the app shows a friendly "wait a moment" message instead of retrying.
-
-If traffic ever outgrows this, upload the cropped images to a Hugging Face dataset. They can then be fetched through `/resolve/` URLs, which have a much higher quota (~3,000 requests per 5 minutes), by changing `thumbUrl()` and `fullUrl()` in `app.js`.
+**Switching to `pages`.** If Hugging Face ever gets in the way, run `python tools/make_site.py --preset pages`, then `npx gh-pages -d site --dotfiles`. The app reads its image sources from `meta.images`, so the code doesn't change. The result size menu only offers sizes up to the hosted `full` size.
 
 ## Development
 
@@ -225,7 +229,7 @@ Useful knobs:
 | --- | --- | --- |
 | `app.js` | `EFFORT` | swap tries per pixel for the final image (quality vs. time) |
 | `app.js` | `SCORE_N`, `SCORE_EFFORT` | resolution and effort of the top-13 scoring |
-| `app.js` | `thumbUrl()`, `fullUrl()` | the only places image URLs are built (local files or Hugging Face) |
+| `app.js` | `imageConfig()`, `urlFor()` | where photos come from per role (`meta.images`: local files or Hugging Face) |
 | `build_data.py` | `N`, `MIN_PER_CLASS`, `BLUR_DROP` | dataset size and selection rules |
 
 ## Limitations
@@ -234,7 +238,7 @@ Useful knobs:
 - **Unusual palettes match worse.** Neon, pure blue or very saturated photos have no close food counterpart, and the result gets noisier.
 - **Food-101 is noisy by design.** A few photos are not food, or carry the wrong label.
 - **Farthest-point selection helps only a little.** Measured coverage is close to a random 50,000-photo subset; it helps slightly with unusual colours.
-- **The deployed site is rate-limited** to about 35 searches per 5 minutes per visitor (see [Deploying](#deploying)).
+- **The deployed site still loads each chosen photo from Hugging Face** (one API call per choice); use the `pages` preset to remove that dependency (see [Deploying](#deploying)).
 
 ## Credits and license
 

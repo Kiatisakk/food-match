@@ -32,14 +32,21 @@ python tools/make_fake_data.py --out=fake_data      # หรือโฟลเ�
 
 ## ขึ้นเว็บ (deploy)
 
-เว็บที่ขึ้นจริง**ไม่มีรูปอาหารเลย** มีแค่โค้ดกับไฟล์ค้นหา ~10 MB ส่วนรูปจะดึงจาก Hugging Face (`ethz/food101`) ตอนแสดงผล โดยใช้ `src.bin` บอกว่ารูปอยู่แถวไหน
+`tools/make_site.py` สร้างโฟลเดอร์ `site/` ไว้ขึ้น GitHub Pages เลือกได้ว่าจะเอารูปจากไหน:
+
+| preset | รูปเล็ก (ตาราง + ให้คะแนน 13 จาน) | รูปใหญ่ (จานที่เลือก) | ขนาดเว็บ | เรียก Hugging Face |
+| --- | --- | --- | --- | --- |
+| **`hybrid`** (ค่าเริ่มต้น) | บนเว็บ 64px | ดึงจาก Hugging Face | ~100 MB | 1 ครั้งต่อจานที่เลือก |
+| **`pages`** | บนเว็บ 64px | บนเว็บ 192px | ~590 MB | ไม่เรียกเลย |
+| `hf` | Hugging Face | Hugging Face | ~10 MB | 13 ครั้งต่อการค้น (ติด rate limit ง่าย) |
 
 ```
-npm run site      # สร้าง site/ จาก data/
-npm run deploy    # สร้างแล้ว push ขึ้น branch gh-pages
+npm run deploy                                 # สร้างแบบ hybrid แล้ว push ขึ้น gh-pages
+python tools/make_site.py --preset pages       # ถ้าอยากเลิกพึ่ง Hugging Face
+npx gh-pages -d site --dotfiles                # แล้ว push ขึ้นไป
 ```
 
-ข้อจำกัด: Hugging Face จำกัดผู้ใช้ที่ไม่ล็อกอินไว้ราว 500 ครั้งต่อ 5 นาทีต่อ IP และค้นหนึ่งครั้งใช้ 13 ครั้ง จึงค้นได้ราว 35 ครั้งต่อ 5 นาทีต่อคน และพิกเซลเริ่มขยับช้ากว่าแบบในเครื่องนิดหน่อย (~2 วินาที)
+แอปอ่านแหล่งรูปจาก `meta.images` เปลี่ยน preset จึงไม่ต้องแก้โค้ด
 
 ## ใช้งาน
 
