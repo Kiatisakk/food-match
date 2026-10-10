@@ -2,16 +2,21 @@ const $ = id => document.getElementById(id);
 const DATA = (new URLSearchParams(location.search).get("data") || "data").replace(/\/?$/, "/");
 const EFFORT = 450; // swap tries per pixel: ~2.5 s at 256x256 on a normal laptop
 
-// All image URLs live here. meta.images === "hf" (the deployed site) fetches the original photo from the
-// Hugging Face dataset viewer instead of our own thumb/ and full/ files, so no images are hosted with the site.
+// ---------- where photos come from ----------
+// All image URLs live here. meta.images picks a source per role (see tools/make_site.py):
+//   thumb: the results grid + the 64px scoring of all 13 candidates (many requests per search)
+//   full:  the original photo + the sharp result of the chosen dish (one request per choice)
+// Each role is {src: "local", size} = our own files under data/thumb|full/, or {src: "hf"} = the original
+// Food-101 photo from the Hugging Face dataset viewer. Default (npm start on a full build): both local.
 const pad = (i, n) => String(i).padStart(n, "0");
 const localUrl = (i, dir) => `${DATA}${dir}/${pad(Math.floor(i / 1000), 2)}/${pad(i, 5)}.jpg`;
 const HF_ROWS = "https://datasets-server.huggingface.co/rows";
 const HF_TTL = 30 * 60 * 1000; // the signed image links expire after ~1 h
-let srcRows = null;             // data/src.bin: (split << 31) | row, only loaded in "hf" mode
+let srcRows = null;             // data/src.bin: (split << 31) | row, only loaded when a role uses "hf"
+let IMG = null;                 // { thumb: {src, size}, full: {src, size} }, resolved from meta when data is ready
 const hfCache = new Map();      // i -> { t, p: Promise<url> }
 // One gentle retry for a dropped request. Not more: the dataset viewer counts as Hugging Face's "API" bucket
-// (~500 requests / 5 min per IP, 13 per search), and a 429 arrives without CORS headers, so it looks like a
+// (~500 requests / 5 min per IP), and a 429 arrives without CORS headers, so it looks like a
 // network error and retrying hard would only burn the quota.
 async function withRetry(fn, waits = [1500]) {
   for (let k = 0; ; k++) {
@@ -31,9 +36,16 @@ function hfUrl(i) {
   hfCache.set(i, { t: performance.now(), p });
   return p;
 }
-// size "thumb" (grid, 96px work) or "full" (256px work); always resolves to a URL
-const thumbUrl = i => meta.images === "hf" ? hfUrl(i) : Promise.resolve(localUrl(i, "thumb"));
-const fullUrl = i => meta.images === "hf" ? hfUrl(i) : Promise.resolve(localUrl(i, "full"));
+function imageConfig(m) {
+  const base = { thumb: { src: "local", size: m.thumb }, full: { src: "local", size: m.full } };
+  if (m.images === "hf") return { thumb: { src: "hf", size: 512 }, full: { src: "hf", size: 512 } }; // older sites
+  if (m.images && typeof m.images === "object") for (const r of ["thumb", "full"]) Object.assign(base[r], m.images[r]);
+  for (const r of ["thumb", "full"]) if (base[r].src === "hf") base[r].size = 512; // Food-101 originals: <= 512px
+  return base;
+}
+const urlFor = (role, i) => IMG[role].src === "hf" ? hfUrl(i) : Promise.resolve(localUrl(i, role));
+const thumbUrl = i => urlFor("thumb", i);
+const fullUrl = i => urlFor("full", i);
 
 let meta = null, ready = null;
 let img = null;                 // user's picture (canvas, <= 1024px)
@@ -59,8 +71,8 @@ searchWorker.onmessage = e => {
     else showNotice(`โหลดข้อมูลไม่ได้ (${m.msg}) ลองเปิดผ่าน <code>npm start</code> ไม่ใช่เปิดไฟล์ตรง ๆ`);
     ready.fail();
   } else if (m.type === "ready") {
-    meta = m.meta;
-    if (meta.images === "hf") {
+    meta = m.meta; IMG = imageConfig(meta);
+    if (IMG.thumb.src === "hf" || IMG.full.src === "hf") {
       fetch(DATA + "src.bin").then(r => r.arrayBuffer()).then(b => { srcRows = new Uint32Array(b); ready.ok(); })
         .catch(() => { showNotice("โหลด src.bin ไม่ได้"); ready.fail(); });
     } else ready.ok();
@@ -74,6 +86,9 @@ ready.p.then(() => {
   const g = $("group");
   g.innerHTML = `<option value="-1">ทุกหมวด</option>` + meta.groups.map((x, i) => `<option value="${i}">${x.th} (${x.en})</option>`).join("");
   $("counter").textContent = `พร้อมค้น ${meta.count.toLocaleString("th-TH")} รูป`;
+  // sizes above the full image's resolution would only be upscaled copies
+  for (const o of [...$("size").options]) if (+o.value > IMG.full.size) o.remove();
+  if (![...$("size").options].some(o => o.selected)) $("size").selectedIndex = $("size").options.length - 1;
   if (img) search();
 }).catch(() => {});
 
@@ -264,8 +279,8 @@ const loadImg = url => new Promise((ok, fail) => {
   i.onload = () => ok(i); i.onerror = () => fail(new Error("load " + url.split("?")[0])); i.src = url;
 });
 function loadError(e) {
-  return meta.images === "hf"
-    ? "โหลดรูปจาก Hugging Face ไม่ได้ อาจเพราะค้นถี่เกินไป (ได้ราว 35 ครั้งต่อ 5 นาที) รอสักครู่แล้วลองใหม่นะ"
+  return IMG.thumb.src === "hf" || IMG.full.src === "hf"
+    ? "โหลดรูปจาก Hugging Face ไม่ได้ อาจเพราะใช้ถี่เกินไป รอสักครู่แล้วลองใหม่นะ"
     : "โหลดรูปอาหารไม่ได้ (" + e.message + ")";
 }
 // centre square of an image, resized to N x N RGBA (local files are already square, HF originals are not)
@@ -277,7 +292,7 @@ function squarePixels(im, N) {
   g.drawImage(im, (im.naturalWidth - s) / 2, (im.naturalHeight - s) / 2, s, s, 0, 0, N, N);
   return g.getImageData(0, 0, N, N).data;
 }
-const targetData = async (it, N) => squarePixels(await loadImg(await (N === 96 ? thumbUrl : fullUrl)(it.i)), N);
+const targetData = async (it, N) => squarePixels(await loadImg(await (N <= IMG.thumb.size ? thumbUrl : fullUrl)(it.i)), N);
 
 async function runHi(it) {
   const my = ++hiTok, N = +$("size").value, n = N * N;
