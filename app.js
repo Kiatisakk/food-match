@@ -138,7 +138,8 @@ let disp = { w: 0, h: 0, k: 1 }, box = { x: 0, y: 0, s: 0 };
 function setImage(c) {
   img = c;
   $("start").hidden = true; $("work").hidden = false;
-  const maxW = Math.min(340, document.querySelector(".left").clientWidth - 30 || 340);
+  // measure the card, not .left: on one-column layouts .left is display: contents (width 0)
+  const maxW = Math.min(340, Math.max(120, document.querySelector(".left > .card").clientWidth - 30) || 340);
   const k = Math.min(1, maxW / c.width, 340 / c.height * (c.height > c.width ? 1 : 1));
   const cv = $("cropImg");
   cv.width = Math.round(c.width * k); cv.height = Math.round(c.height * k);
